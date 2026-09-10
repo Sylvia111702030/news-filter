@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>全面搜索：假新聞分類任務</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+<!-- 引入 Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#FBE8DD;
+    --surface:#FFF9F2;
+    --surface-line:#EAD9C8;
+    --ink:#3A2C22;
+    --ink-muted:#9C8879;
+    --accent:#E2603A;
+    --accent-deep:#B84726;
+    --accent-soft:#FADBCB;
+    --hue-a:#E2603A;
+    --hue-b:#3F7A5C;
+    --hue-c:#3E6FA8;
+    --hue-d:#A0529A;
+    --hue-e:#D97706; /* 第五組代表色：琥珀金 */
+    --ok:#3F7A5C;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 8% 12%, rgba(226,96,58,0.07), transparent 40%),
+      radial-gradient(circle at 92% 88%, rgba(62,111,168,0.07), transparent 40%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Noto Sans TC", system-ui, sans-serif;
+    min-height:100vh;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap{max-width:1200px; margin:0 auto; padding:20px 20px 64px;}
+
+  header{padding-top:6px; margin-bottom:18px;}
+  .eyebrow{font-size:0.9rem; color:var(--ink-muted); font-weight:500; margin:0 0 4px;}
+  h1{font-size:clamp(1.5rem,4vw,2.1rem); font-weight:900; margin:0 0 16px; letter-spacing:0.01em;}
+
+  .tabs{
+    display:flex; gap:8px; flex-wrap:wrap;
+    background:rgba(255,255,255,0.5);
+    padding:6px; border-radius:999px; border:1px solid var(--surface-line);
+  }
+  .tab{
+    flex:1 1 auto; text-align:center;
+    padding:10px 16px; border-radius:999px; border:none;
+    background:transparent; color:var(--ink-muted);
+    font-family:inherit; font-weight:700; font-size:0.95rem;
+    cursor:pointer; transition:background .15s, color .15s;
+    white-space:nowrap;
+  }
+  .tab.active{background:var(--accent); color:#fff;}
+  .tab:not(.active):hover{background:rgba(226,96,58,0.1); color:var(--accent-deep);}
+
+  .panel{margin-top:22px;}
+  .section-title{font-size:1.25rem; font-weight:900; margin:0 0 4px;}
+  .section-sub{color:var(--ink-muted); font-size:0.95rem; margin:0 0 18px;}
+
+  .field-row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px;}
+  .field{flex:1 1 240px; display:flex; flex-direction:column; gap:6px;}
+  label{font-size:0.85rem; font-weight:700; color:var(--ink-muted);}
+  input[type=text], textarea{
+    font-family:inherit; font-size:1rem; padding:10px 12px;
+    border-radius:10px; border:1.5px solid var(--surface-line);
+    background:#fff; color:var(--ink); resize:vertical;
+  }
+  input[type=text]:focus, textarea:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
+  textarea{min-height:56px;}
+
+  .btn{
+    font-family:inherit; font-weight:700; font-size:0.95rem;
+    padding:11px 20px; border-radius:10px; border:none; cursor:pointer;
+    background:var(--accent); color:#fff; transition:background .15s, transform .1s;
+    white-space:nowrap;
+  }
+  .btn:hover{background:var(--accent-deep);}
+  .btn:active{transform:scale(0.97);}
+  .btn.ghost{background:transparent; color:var(--accent-deep); border:1.5px solid var(--accent);}
+  .btn.ghost:hover{background:var(--accent-soft);}
+  .btn.small{padding:6px 12px; font-size:0.85rem; border-radius:8px;}
+  .btn:disabled{opacity:0.45; cursor:not-allowed;}
+
+  .board{
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.015) 0 1px, transparent 1px 100%),
+               #F3E2D2;
+    border-radius:16px; padding:20px; border:1px solid var(--surface-line);
+    display:flex; flex-wrap:wrap; gap:16px; min-height:120px; align-items:flex-start;
+  }
+  .empty-hint{color:var(--ink-muted); font-size:0.95rem; padding:20px; width:100%; text-align:center;}
+
+  .note{
+    position:relative;
+    background:var(--surface);
+    width:200px; padding:16px 14px 14px;
+    border-radius:3px 14px 3px 14px;
+    box-shadow:0 4px 10px rgba(58,44,34,0.14);
+    font-size:0.9rem; line-height:1.4;
+    cursor:pointer; user-select:none;
+    transition:transform .12s, box-shadow .12s;
+  }
+  .note:nth-child(3n+1){transform:rotate(-1.6deg);}
+  .note:nth-child(3n+2){transform:rotate(1.1deg);}
+  .note:nth-child(3n){transform:rotate(-0.4deg);}
+  .note:hover{box-shadow:0 8px 16px rgba(58,44,34,0.2); z-index:2;}
+  .note.selected{outline:3px solid var(--accent); outline-offset:2px; z-index:3;}
+  .note::before{
+    content:''; position:absolute; top:-6px; left:50%; transform:translateX(-50%);
+    width:12px; height:12px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #fff, var(--accent-deep));
+    box-shadow:0 2px 3px rgba(0,0,0,0.3);
+  }
+  .note .title{font-weight:700; margin-bottom:6px; display:block;}
+  .note .source{color:var(--ink-muted); font-size:0.78rem;}
+  .note .remove-x{
+    position:absolute; top:4px; right:6px; font-size:0.75rem; color:var(--ink-muted);
+    opacity:0; transition:opacity .1s;
+  }
+  .note:hover .remove-x{opacity:1;}
+
+  .group-picker{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:22px;}
+  .group-btn{
+    flex:1 1 140px; padding:16px; border-radius:14px; border:2px solid var(--surface-line);
+    background:#fff; cursor:pointer; font-family:inherit; text-align:left;
+    transition:border-color .15s, background .15s;
+  }
+  .group-btn strong{display:block; font-size:1.05rem; font-weight:900;}
+  .group-btn span{font-size:0.8rem; color:var(--ink-muted);}
+  .group-btn.active{border-color:var(--accent); background:var(--accent-soft);}
+  .group-btn:hover{border-color:var(--accent);}
+
+  .switch-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;}
+  .current-group-badge{
+    display:inline-flex; align-items:center; gap:8px; font-weight:900; font-size:1.1rem;
+    background:#fff; border:2px solid var(--surface-line); padding:8px 16px; border-radius:999px;
+  }
+
+  .classify-grid{display:grid; grid-template-columns:1fr; gap:22px;}
+  @media(min-width:860px){ .classify-grid{grid-template-columns:1fr 1.4fr;} }
+
+  .pool-col h3, .bucket-col h3{font-size:1rem; font-weight:900; margin:0 0 10px;}
+  .hint-banner{
+    background:var(--accent-soft); color:var(--accent-deep); font-size:0.85rem;
+    padding:8px 14px; border-radius:10px; margin-bottom:14px; display:none;
+  }
+  .hint-banner.show{display:block;}
+
+  .buckets{display:flex; flex-direction:column; gap:26px;}
+  .bucket{
+    position:relative; border-radius:0 14px 14px 14px; padding:18px 16px 16px;
+    border:1px solid rgba(0,0,0,0.06);
+    min-height:88px;
+  }
+  .bucket-tab{
+    position:absolute; top:-17px; left:14px; padding:6px 16px;
+    border-radius:10px 10px 0 0; font-weight:900; font-size:0.9rem; color:#fff;
+  }
+  .bucket-body{display:flex; flex-wrap:wrap; gap:10px; margin-top:6px;}
+  .bucket-empty{color:rgba(58,44,34,0.55); font-size:0.85rem; padding:6px 2px;}
+  .chip{
+    background:rgba(255,255,255,0.85); border-radius:3px 10px 3px 10px; padding:8px 10px;
+    font-size:0.82rem; cursor:pointer; max-width:180px;
+    box-shadow:0 2px 5px rgba(0,0,0,0.08);
+  }
+  .chip .title{font-weight:700; display:block;}
+  .bucket-actions{position:absolute; top:-17px; right:10px; display:flex; gap:6px;}
+  .icon-btn{
+    background:rgba(255,255,255,0.9); border:none; border-radius:8px; width:28px; height:28px;
+    cursor:pointer; font-size:0.85rem; color:var(--ink);
+  }
+
+  .name-card{
+    background:#fff; border-radius:14px; padding:18px 18px 20px; margin-bottom:18px;
+    border-left:8px solid var(--accent); box-shadow:0 2px 8px rgba(58,44,34,0.06);
+  }
+  .name-card .count-badge{font-size:0.8rem; color:var(--ink-muted); margin-left:8px; font-weight:500;}
+  .name-card .refs{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .ref-chip{
+    background:var(--bg); border-radius:3px 8px 3px 8px; padding:5px 10px; font-size:0.78rem; color:var(--ink-muted);
+  }
+  .saved-tick{font-size:0.78rem; color:var(--ok); font-weight:700; margin-left:10px; opacity:0; transition:opacity .3s;}
+  .saved-tick.show{opacity:1;}
+
+  /* 支援 5 組響應式網格排版 */
+  .overview-grid{display:grid; grid-template-columns:1fr; gap:16px;}
+  @media(min-width:680px){ .overview-grid{grid-template-columns:repeat(2,1fr);} }
+  @media(min-width:960px){ .overview-grid{grid-template-columns:repeat(3,1fr);} }
+  @media(min-width:1200px){ .overview-grid{grid-template-columns:repeat(5,1fr);} }
+  .ov-col{background:#fff; border-radius:14px; padding:16px; border:1px solid var(--surface-line);}
+  .ov-col h3{margin:0 0 12px; font-size:1.05rem; font-weight:900;}
+  .ov-bucket{border-radius:10px; padding:10px 12px; margin-bottom:10px; background:var(--bg);}
+  .ov-bucket .name{font-weight:900; font-size:0.95rem;}
+  .ov-bucket .kw{font-size:0.78rem; color:var(--ink-muted); margin-top:2px;}
+  .ov-bucket ul{margin:8px 0 0; padding-left:18px; font-size:0.8rem;}
+  .ov-empty{color:var(--ink-muted); font-size:0.85rem;}
+
+  .toolbar{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; justify-content:flex-end;}
+
+  footer.note-footer{
+    text-align:center; color:var(--ink-muted); font-size:0.78rem; margin-top:40px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">六甲健康課・情緒偵探社</p>
+    <h1>全面搜索：假新聞分類任務</h1>
+    <div class="tabs" id="tabs">
+      <button class="tab" data-tab="upload">① 上傳假新聞</button>
+      <button class="tab" data-tab="classify">② 分組分類</button>
+      <button class="tab" data-tab="name">③ 類別命名</button>
+      <button class="tab" data-tab="overview">總覽彙整</button>
+    </div>
+  </header>
+
+  <div id="screen"></div>
+
+  <footer class="note-footer">資料已連接雲端資料庫，任何平板打開皆可即時同步操作。</footer>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBNyFzD846dRFgARupNYxtF9mA6mMaM8bk",
+  authDomain: "news-detective-1a9a4.firebaseapp.com",
+  databaseURL: "https://news-detective-1a9a4-default-rtdb.firebaseio.com",
+  projectId: "news-detective-1a9a4",
+  storageBucket: "news-detective-1a9a4.firebasestorage.app",
+  messagingSenderId: "677558528119",
+  appId: "1:677558528119:web:ae8ab69b639f3c17f4be72",
+  measurementId: "G-27DHJL04Z6"
+};
+
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.database();
+
+// 設定為 5 個組別
+const GROUPS = [1,2,3,4,5];
+const GROUP_NAMES = ['一','二','三','四','五'];
+
+let state = {
+  tab: 'upload',
+  news: [],
+  currentGroup: null,
+  groupData: {},
+  selectedNoteId: null,
+};
+
+const screenEl = document.getElementById('screen');
+const bucketHues = ['var(--hue-a)','var(--hue-b)','var(--hue-c)','var(--hue-d)','var(--hue-e)'];
+
+// 即時監聽新聞池
+db.ref('news-pool').on('value', snapshot => {
+  state.news = snapshot.val() || [];
+  render();
+});
+
+// 即時監聽 5 個組別
+GROUPS.forEach(g => {
+  db.ref('group-' + g).on('value', snapshot => {
+    state.groupData[g] = snapshot.val() || { buckets: [] };
+    if (!state.groupData[g].buckets) state.groupData[g].buckets = [];
+    render();
+  });
+});
+
+async function saveNews(){
+  try {
+    await db.ref('news-pool').set(state.news);
+  } catch(e){
+    console.error('儲存新聞失敗', e);
+    alert('儲存失敗，請確認資料庫規則已設為允許公開讀寫！');
+  }
+}
+
+async function saveGroup(g){
+  try {
+    const cleanData = {
+      buckets: (state.groupData[g].buckets || []).map(b => ({
+        id: b.id || uid('b'),
+        name: b.name || '',
+        keyword: b.keyword || '',
+        itemIds: b.itemIds || []
+      }))
+    };
+    await db.ref('group-' + g).set(cleanData);
+  } catch(e){
+    console.error('儲存分類失敗', e);
+    alert('儲存失敗，請確認資料庫規則已設為允許公開讀寫！');
+  }
+}
+
+function uid(prefix){ return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
+
+// 分頁切換
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.tab');
+  if(!btn) return;
+  state.tab = btn.dataset.tab;
+  render();
+});
+
+function setActiveTab(){
+  document.querySelectorAll('.tab').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab === state.tab);
+  });
+}
+
+function render(){
+  setActiveTab();
+  if(state.tab === 'upload'){ renderUpload(); }
+  else if(state.tab === 'classify'){ renderClassify(); }
+  else if(state.tab === 'name'){ renderName(); }
+  else if(state.tab === 'overview'){ renderOverview(); }
+}
+
+// 畫面 1: 上傳新聞
+function renderUpload(){
+  screenEl.innerHTML = `
+    <div class="panel">
+      <p class="section-title">上傳你查到的假新聞</p>
+      <p class="section-sub">全班共用同一個新聞池，寫完標題跟資料來源就送出，大家都會看到。</p>
+
+      <div class="field-row">
+        <div class="field" style="flex:2 1 320px;">
+          <label for="in-title">新聞標題</label>
+          <textarea id="in-title" placeholder="例如：網傳「總醫院陳惠仁教授強調，熱檸檬水能救你一輩子！」"></textarea>
+        </div>
+        <div class="field">
+          <label for="in-source">資料來源</label>
+          <input type="text" id="in-source" placeholder="例如：LINE 群組轉發 / 查核中心">
+        </div>
+      </div>
+      <div class="field-row" style="margin-bottom:22px;">
+        <button class="btn" id="btn-add-news">送出這則新聞</button>
+        <button class="btn ghost" id="btn-verify">🔍 開新分頁查證關鍵字</button>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:900;margin:0 0 10px;">全班已收集 <span id="news-count">0</span> 則</h3>
+      <div class="board" id="news-board"></div>
+    </div>
+  `;
+
+  document.getElementById('btn-add-news').addEventListener('click', async ()=>{
+    const titleEl = document.getElementById('in-title');
+    const sourceEl = document.getElementById('in-source');
+    const title = titleEl.value.trim();
+    const source = sourceEl.value.trim();
+    if(!title){ titleEl.focus(); return; }
+    
+    state.news.push({ id: uid('n'), title, source });
+    await saveNews();
+    titleEl.value = ''; sourceEl.value = '';
+  });
+
+  document.getElementById('btn-verify').addEventListener('click', ()=>{
+    const title = document.getElementById('in-title').value.trim();
+    const q = title || '';
+    const url = 'https://www.google.com/search?q=' + encodeURIComponent(q);
+    window.open(url, '_blank');
+  });
+
+  const board = document.getElementById('news-board');
+  document.getElementById('news-count').textContent = state.news.length;
+  if(state.news.length === 0){
+    board.innerHTML = `<div class="empty-hint">還沒有人上傳，快來當第一個偵探吧！</div>`;
+  }else{
+    board.innerHTML = state.news.map(n => `
+      <div class="note" data-id="${n.id}">
+        <span class="remove-x" data-del="${n.id}">✕</span>
+        <span class="title">${escapeHtml(n.title)}</span>
+        <span class="source">來源：${escapeHtml(n.source || '未填寫')}</span>
+      </div>
+    `).join('');
+    board.querySelectorAll('[data-del]').forEach(x=>{
+      x.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        if(!confirm('確定要刪除這則新聞嗎？（分組中的分類也會一併移除）')) return;
+        const id = x.dataset.del;
+        state.news = state.news.filter(n=>n.id!==id);
+        await saveNews();
+
+        for(const g of GROUPS){
+          if(state.groupData[g] && state.groupData[g].buckets){
+            let changed = false;
+            state.groupData[g].buckets.forEach(b=>{
+              const before = (b.itemIds || []).length;
+              b.itemIds = (b.itemIds || []).filter(i=>i!==id);
+              if(b.itemIds.length !== before) changed = true;
+            });
+            if(changed) await saveGroup(g);
+          }
+        }
+      });
+    });
+  }
+}
+
+function escapeHtml(str){
+  return (str||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function groupPickerHtml(){
+  return `<div class="group-picker">` + GROUPS.map(g=>`
+    <button class="group-btn ${state.currentGroup===g?'active':''}" data-group="${g}">
+      <strong>第 ${GROUP_NAMES[g-1]} 組</strong>
+      <span>點選以進入這組的分類畫面</span>
+    </button>
+  `).join('') + `</div>`;
+}
+function bindGroupPicker(afterFn){
+  document.querySelectorAll('.group-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      state.currentGroup = parseInt(b.dataset.group,10);
+      state.selectedNoteId = null;
+      afterFn();
+    });
+  });
+}
+
+// 畫面 2: 分組分類
+function renderClassify(){
+  if(!state.currentGroup){
+    screenEl.innerHTML = `
+      <div class="panel">
+        <p class="section-title">先選你們這一組</p>
+        <p class="section-sub">同組不管用幾台平板，選同一個組別就會看到同一份分類進度。</p>
+        ${groupPickerHtml()}
+      </div>
+    `;
+    bindGroupPicker(renderClassify);
+    return;
+  }
+
+  const g = state.currentGroup;
+  const gd = state.groupData[g] || { buckets: [] };
+  const assignedIds = new Set((gd.buckets || []).flatMap(b=>b.itemIds || []));
+  const pool = state.news.filter(n=>!assignedIds.has(n.id));
+
+  screenEl.innerHTML = `
+    <div class="panel">
+      <div class="switch-row">
+        <span class="current-group-badge">🔎 第 ${GROUP_NAMES[g-1]} 組</span>
+        <button class="btn ghost small" id="btn-switch-group">切換組別</button>
+      </div>
+      <p class="section-title">把新聞分成幾類</p>
+      <p class="section-sub">還不用取名字，先把「感覺像同一類」的新聞放在一起就好。點一則新聞，再點要放進去的類別。</p>
+      <div class="hint-banner" id="hint-banner">已選取一則新聞，現在點下方任一類別把它放進去 →</div>
+
+      <div class="classify-grid">
+        <div class="pool-col">
+          <h3>待分類新聞（${pool.length}）</h3>
+          <div class="board" id="pool-board" style="min-height:300px;"></div>
+        </div>
+        <div class="bucket-col">
+          <h3>類別</h3>
+          <div class="buckets" id="buckets-area"></div>
+          <button class="btn ghost add-bucket-btn" id="btn-add-bucket" style="margin-top:14px;">＋ 新增一個類別</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-switch-group').addEventListener('click', ()=>{
+    state.currentGroup = null;
+    renderClassify();
+  });
+
+  const poolBoard = document.getElementById('pool-board');
+  if(pool.length===0){
+    poolBoard.innerHTML = `<div class="empty-hint">${state.news.length===0 ? '全班還沒有人上傳新聞，先去「①上傳假新聞」' : '這一組的新聞都分類完了 🎉'}</div>`;
+  }else{
+    poolBoard.innerHTML = pool.map(n=>`
+      <div class="note ${state.selectedNoteId===n.id?'selected':''}" data-id="${n.id}">
+        <span class="title">${escapeHtml(n.title)}</span>
+        <span class="source">來源：${escapeHtml(n.source||'未填寫')}</span>
+      </div>
+    `).join('');
+    poolBoard.querySelectorAll('.note').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        state.selectedNoteId = (state.selectedNoteId === el.dataset.id) ? null : el.dataset.id;
+        renderClassify();
+      });
+    });
+  }
+  document.getElementById('hint-banner').classList.toggle('show', !!state.selectedNoteId);
+
+  const bucketsArea = document.getElementById('buckets-area');
+  const buckets = gd.buckets || [];
+  if(buckets.length===0){
+    bucketsArea.innerHTML = `<div class="empty-hint" style="background:#fff;border-radius:12px;">還沒有類別，點下面「＋ 新增一個類別」開始吧</div>`;
+  }else{
+    bucketsArea.innerHTML = buckets.map((b,idx)=>{
+      const hue = bucketHues[idx % bucketHues.length];
+      const items = (b.itemIds || []).map(id=>state.news.find(n=>n.id===id)).filter(Boolean);
+      return `
+        <div class="bucket" data-bucket="${b.id}" style="background:color-mix(in srgb, ${hue} 14%, white);">
+          <div class="bucket-tab" style="background:${hue};">類別 ${idx+1}</div>
+          <div class="bucket-actions">
+            <button class="icon-btn" data-del-bucket="${b.id}" title="刪除這個類別">✕</button>
+          </div>
+          <div class="bucket-body">
+            ${items.length===0
+              ? `<div class="bucket-empty">${state.selectedNoteId ? '點這裡放入選取的新聞' : '空的，先在左邊選一則新聞'}</div>`
+              : items.map(it=>`<div class="chip" data-remove-item="${b.id}|${it.id}"><span class="title">${escapeHtml(it.title)}</span></div>`).join('')
+            }
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    bucketsArea.querySelectorAll('.bucket').forEach(el=>{
+      el.addEventListener('click', async (e)=>{
+        if(e.target.closest('[data-del-bucket]') || e.target.closest('[data-remove-item]')) return;
+        if(!state.selectedNoteId) return;
+        const bucketId = el.dataset.bucket;
+        const bucket = (state.groupData[g].buckets || []).find(b=>b.id===bucketId);
+        if(bucket){
+          if(!bucket.itemIds) bucket.itemIds = [];
+          if(!bucket.itemIds.includes(state.selectedNoteId)){
+            bucket.itemIds.push(state.selectedNoteId);
+            await saveGroup(g);
+          }
+        }
+        state.selectedNoteId = null;
+      });
+    });
+    bucketsArea.querySelectorAll('[data-remove-item]').forEach(chip=>{
+      chip.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const [bucketId,itemId] = chip.dataset.removeItem.split('|');
+        const bucket = (state.groupData[g].buckets || []).find(b=>b.id===bucketId);
+        if(bucket && bucket.itemIds){
+          bucket.itemIds = bucket.itemIds.filter(i=>i!==itemId);
+          await saveGroup(g);
+        }
+      });
+    });
+    bucketsArea.querySelectorAll('[data-del-bucket]').forEach(x=>{
+      x.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const bucketId = x.dataset.delBucket;
+        const bucket = (state.groupData[g].buckets || []).find(b=>b.id===bucketId);
+        if(bucket && (bucket.itemIds || []).length>0){
+          if(!confirm('這個類別裡還有新聞，刪除後新聞會回到待分類，確定嗎？')) return;
+        }
+        state.groupData[g].buckets = (state.groupData[g].buckets || []).filter(b=>b.id!==bucketId);
+        await saveGroup(g);
+      });
+    });
+  }
+
+  document.getElementById('btn-add-bucket').addEventListener('click', async ()=>{
+    if(!state.groupData[g].buckets) state.groupData[g].buckets = [];
+    state.groupData[g].buckets.push({ id: uid('b'), name: '', keyword: '', itemIds: [] });
+    await saveGroup(g);
+  });
+}
+
+// 畫面 3: 類別命名
+function renderName(){
+  if(!state.currentGroup){
+    screenEl.innerHTML = `
+      <div class="panel">
+        <p class="section-title">先選你們這一組</p>
+        <p class="section-sub">幫剛剛分好的每一類新聞，取一個關鍵詞名稱。</p>
+        ${groupPickerHtml()}
+      </div>
+    `;
+    bindGroupPicker(renderName);
+    return;
+  }
+
+  const g = state.currentGroup;
+  const gd = state.groupData[g] || { buckets: [] };
+  const buckets = gd.buckets || [];
+
+  screenEl.innerHTML = `
+    <div class="panel">
+      <div class="switch-row">
+        <span class="current-group-badge">🏷️ 第 ${GROUP_NAMES[g-1]} 組</span>
+        <button class="btn ghost small" id="btn-switch-group">切換組別</button>
+      </div>
+      <p class="section-title">幫每個類別取名字</p>
+      <p class="section-sub">想想這一類新聞的共通點，取一個關鍵詞，並挑一句最能代表這一類的例句。</p>
+      <div id="name-cards"></div>
+    </div>
+  `;
+
+  document.getElementById('btn-switch-group').addEventListener('click', ()=>{
+    state.currentGroup = null;
+    renderName();
+  });
+
+  const container = document.getElementById('name-cards');
+  if(buckets.length===0){
+    container.innerHTML = `<div class="empty-hint" style="background:#fff;border-radius:12px;">這組還沒有分類別，請先到「②分組分類」建立類別</div>`;
+    return;
+  }
+
+  container.innerHTML = buckets.map((b,idx)=>{
+    const items = (b.itemIds || []).map(id=>state.news.find(n=>n.id===id)).filter(Boolean);
+    return `
+      <div class="name-card" style="border-left-color:${bucketHues[idx%bucketHues.length]};">
+        <label>關鍵詞名稱<span class="count-badge">共 ${items.length} 則新聞</span><span class="saved-tick" id="tick-${b.id}">已儲存 ✓</span></label>
+        <input type="text" data-name-input="${b.id}" placeholder="例如：權威代言 / 誇大療效 / 恐懼催促" value="${escapeHtml(b.name)}" style="margin:8px 0 12px;">
+        <label>代表例句（挑一句，或自己改寫）</label>
+        <textarea data-keyword-input="${b.id}" placeholder="例如：總醫院陳惠仁教授表示檸檬水可以治癌症" style="margin-top:8px;">${escapeHtml(b.keyword||'')}</textarea>
+        <div class="refs">
+          ${items.length===0 ? `<span class="ref-chip">這個類別目前沒有新聞</span>` :
+            items.map(it=>`<span class="ref-chip">${escapeHtml(it.title.length>24? it.title.slice(0,24)+'…' : it.title)}</span>`).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('[data-name-input]').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const id = inp.dataset.nameInput;
+      const bucket = (state.groupData[g].buckets || []).find(b=>b.id===id);
+      if(bucket){
+        bucket.name = inp.value.trim();
+        await saveGroup(g);
+        flashSaved(id);
+      }
+    });
+  });
+  container.querySelectorAll('[data-keyword-input]').forEach(ta=>{
+    ta.addEventListener('change', async ()=>{
+      const id = ta.dataset.keywordInput;
+      const bucket = (state.groupData[g].buckets || []).find(b=>b.id===id);
+      if(bucket){
+        bucket.keyword = ta.value.trim();
+        await saveGroup(g);
+        flashSaved(id);
+      }
+    });
+  });
+}
+function flashSaved(id){
+  const el = document.getElementById('tick-'+id);
+  if(!el) return;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 1600);
+}
+
+// 畫面 4: 總覽彙整（支援 5 組排版）
+function renderOverview(){
+  screenEl.innerHTML = `
+    <div class="panel">
+      <div class="toolbar"><button class="btn ghost small" id="btn-refresh-ov">🔄 重新整理</button></div>
+      <p class="section-title">全班分類總覽</p>
+      <p class="section-sub">五組的分類結果，可以投影出來讓大家分享與比較。</p>
+      <div class="overview-grid" id="ov-grid"></div>
+    </div>
+  `;
+  document.getElementById('btn-refresh-ov').addEventListener('click', render);
+
+  const grid = document.getElementById('ov-grid');
+  grid.innerHTML = GROUPS.map(g=>{
+    const gd = state.groupData[g] || { buckets: [] };
+    const buckets = gd.buckets || [];
+    const bucketsHtml = buckets.length===0
+      ? `<div class="ov-empty">還沒有分類結果</div>`
+      : buckets.map((b,idx)=>{
+          const items = (b.itemIds || []).map(id=>state.news.find(n=>n.id===id)).filter(Boolean);
+          return `
+            <div class="ov-bucket" style="border-left:4px solid ${bucketHues[idx%bucketHues.length]};">
+              <div class="name">${escapeHtml(b.name) || '（尚未命名）'}</div>
+              ${b.keyword ? `<div class="kw">「${escapeHtml(b.keyword)}」</div>` : ''}
+              <ul>${items.map(it=>`<li>${escapeHtml(it.title.length>20? it.title.slice(0,20)+'…': it.title)}</li>`).join('') || '<li style="color:var(--ink-muted);">（沒有新聞）</li>'}</ul>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div class="ov-col">
+        <h3>第 ${GROUP_NAMES[g-1]} 組</h3>
+        ${bucketsHtml}
+      </div>
+    `;
+  }).join('');
+}
+
+render();
+</script>
+</body>
+</html>
